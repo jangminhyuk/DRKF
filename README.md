@@ -66,3 +66,10 @@ Verifies DRKF spectral boundedness and KF sandwich properties. Runs 20 random ex
 ```
 python drkf_tube_check.py
 ```
+
+### ellipses_visualization_test.py
+
+Generates 2D and 3D visualizations of the KF sandwich property using 95% confidence ellipses to demonstrate nested inclusion LOW ⊆ DRKF ⊆ HIGH across time-varying covariance scenarios.
+```
+python ellipses_visualization_test.py
+```
