@@ -64,12 +64,13 @@ def create_violin_plot(all_results, raw_experiments_data, optimal_results, dist,
     # Create the violin plot
     fig, ax = plt.subplots(figsize=(14, 9))
     
-    # Prepare data for violin plot
-    violin_data = [mse_data[filt] for filt in filters]
-    violin_labels = [filter_labels[filt] for filt in filters]
+    # Prepare data for violin plot - only include filters with data
+    active_filters = [filt for filt in filters if mse_data[filt]]
+    violin_data = [mse_data[filt] for filt in active_filters]
+    violin_labels = [filter_labels[filt] for filt in active_filters]
     
     # Create violin plot
-    parts = ax.violinplot(violin_data, positions=range(len(filters)), showmeans=True, showmedians=True)
+    parts = ax.violinplot(violin_data, positions=range(len(active_filters)), showmeans=True, showmedians=True)
     
     # Customize violin plot colors with specific colors for certain methods
     def get_color_for_filter(filt, i):
@@ -82,13 +83,13 @@ def create_violin_plot(all_results, raw_experiments_data, optimal_results, dist,
             colors = plt.cm.tab10(np.linspace(0, 1, 10))
             return colors[i % len(colors)]
     
-    for i, (pc, filt) in enumerate(zip(parts['bodies'], filters)):
+    for i, (pc, filt) in enumerate(zip(parts['bodies'], active_filters)):
         color = get_color_for_filter(filt, i)
         pc.set_facecolor(color)
         pc.set_alpha(0.7)
     
     # Set labels and title
-    ax.set_xticks(range(len(filters)))
+    ax.set_xticks(range(len(active_filters)))
     ax.set_xticklabels(violin_labels, rotation=45, ha='right')
     ax.set_ylabel('Mean Squared Error (MSE)')
     ax.grid(True, alpha=0.3)
@@ -220,7 +221,7 @@ def create_theta_effect_plot(all_results, dist, filters, filter_labels):
             mse_vals = [all_results[robust_vals[0]]['mse'][filt]] * len(robust_vals)
             mse_stds = [all_results[robust_vals[0]]['mse_std'][filt]] * len(robust_vals)
             label = f"{letter_labels[i]} {filter_labels[filt]}"  # Remove (Non-robust) and add letter
-            linestyle = '--'
+            linestyle = '-'
         else:
             # For robust methods, plot actual theta effect
             mse_vals = [all_results[rv]['mse'][filt] for rv in robust_vals]
@@ -229,13 +230,22 @@ def create_theta_effect_plot(all_results, dist, filters, filter_labels):
             linestyle = '-'
         
         # Plot without error bars
-        ax.plot(robust_vals, mse_vals, 
-                marker=markers[i % len(markers)], 
-                color=get_color_for_filter(filt, i),
-                linestyle=linestyle,
-                linewidth=2,
-                markersize=8,
-                label=label)
+        # For non-robust methods, draw horizontal line without markers
+        if filt in ['finite', 'inf']:
+            ax.plot(robust_vals, mse_vals, 
+                    marker='None', 
+                    color=get_color_for_filter(filt, i),
+                    linestyle=linestyle,
+                    linewidth=2,
+                    label=label)
+        else:
+            ax.plot(robust_vals, mse_vals, 
+                    marker=markers[i % len(markers)], 
+                    color=get_color_for_filter(filt, i),
+                    linestyle=linestyle,
+                    linewidth=2,
+                    markersize=8,
+                    label=label)
     
     # Customize plot
     ax.set_xlabel('θ')
@@ -289,7 +299,7 @@ def create_regret_theta_effect_plot(all_results, dist, filters, filter_labels):
             regret_vals = [all_results[robust_vals[0]]['regret'][filt]] * len(robust_vals)
             regret_stds = [all_results[robust_vals[0]]['regret_std'][filt]] * len(robust_vals)
             label = f"{letter_labels[i]} {filter_labels[filt]}"
-            linestyle = '--'
+            linestyle = '-'
         else:
             # For robust methods, plot actual theta effect
             regret_vals = [all_results[rv]['regret'][filt] for rv in robust_vals]
@@ -298,13 +308,22 @@ def create_regret_theta_effect_plot(all_results, dist, filters, filter_labels):
             linestyle = '-'
         
         # Plot without error bars
-        ax.plot(robust_vals, regret_vals, 
-                marker=markers[i % len(markers)], 
-                color=get_color_for_filter(filt, i),
-                linestyle=linestyle,
-                linewidth=2,
-                markersize=8,
-                label=label)
+        # For non-robust methods, draw horizontal line without markers
+        if filt in ['finite', 'inf']:
+            ax.plot(robust_vals, regret_vals, 
+                    marker='None', 
+                    color=get_color_for_filter(filt, i),
+                    linestyle=linestyle,
+                    linewidth=2,
+                    label=label)
+        else:
+            ax.plot(robust_vals, regret_vals, 
+                    marker=markers[i % len(markers)], 
+                    color=get_color_for_filter(filt, i),
+                    linestyle=linestyle,
+                    linewidth=2,
+                    markersize=8,
+                    label=label)
     
     # Add horizontal line at y=0 (perfect regret)
     ax.axhline(y=0, color='black', linestyle=':', alpha=0.7, label='MMSE Baseline (Regret = 0)')
@@ -452,10 +471,10 @@ def main(dist):
         print(f"Missing file: {e}")
         return
     
-    # Define filters and labels in the specified order
-    # Order: Time-varying KF, Time-invariant KF, Risk-Sensitive Filter, DRKF (NeurIPS), BCOT, 
-    # DRKF (ours, finite, CDC), DRKF (ours, inf CDC), DRKF (ours, finite), DRKF (ours, infinite)
-    filters = ['finite', 'inf', 'risk', 'drkf_neurips', 'bcot', 'drkf_finite_cdc', 'drkf_inf_cdc', 'drkf_finite', 'drkf_inf']
+    # Get filters from the loaded results to match main5.py execution list
+    available_filters = ['finite', 'inf', 'risk', 'drkf_neurips', 'bcot', 'drkf_finite_cdc', 'drkf_inf_cdc', 'drkf_finite', 'drkf_inf']
+    # Only use filters that have results in the data
+    filters = [f for f in available_filters if f in optimal_results]
     filter_labels = {
         'finite': "Time-varying KF",
         'inf': "Time-invariant KF",
@@ -517,10 +536,11 @@ def main(dist):
     print(f"{'Method':<30} {'MSE-optimal θ':<15} {'Regret-optimal θ':<15} {'Same?':<10}")
     print("-" * 70)
     for filt in filters:
-        mse_theta = optimal_results[filt]['robust_val']
-        regret_theta = optimal_regret_results[filt]['robust_val']
-        same = "Yes" if mse_theta == regret_theta else "No"
-        print(f"{filter_labels[filt]:<30} {str(mse_theta):<15} {str(regret_theta):<15} {same:<10}")
+        if filt in optimal_results and filt in optimal_regret_results:
+            mse_theta = optimal_results[filt]['robust_val']
+            regret_theta = optimal_regret_results[filt]['robust_val']
+            same = "Yes" if mse_theta == regret_theta else "No"
+            print(f"{filter_labels[filt]:<30} {str(mse_theta):<15} {str(regret_theta):<15} {same:<10}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create plots from main5.py results")

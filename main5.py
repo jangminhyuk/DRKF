@@ -92,21 +92,41 @@ def generate_data(T, nx, ny, A, C, mu_w, Sigma_w, mu_v, M,
     return x_true_all, y_all
 
 # --- Modified Experiment Function ---
-def run_experiment(exp_idx, dist, num_sim, seed_base, robust_val, T_total):
+def run_experiment(exp_idx, dist, num_sim, seed_base, robust_val, T_total, filters_to_execute):
     np.random.seed(seed_base + exp_idx)
     
-    dt = 0.2
-    time_steps = int(T_total / dt) + 1
-    T = time_steps - 1  # simulation horizon
+    # Set time horizon to T=50
+    T = 50  # simulation horizon
     
-    # Discrete-time system dynamics (4D double integrator, no control)
-    A = np.array([[1, dt, 0, 0],
-                  [0, 1, 0, 0],
-                  [0, 0, 1, dt],
-                  [0, 0, 0, 1]])
-    B = np.zeros((4, 2))  # No control input
-    C = np.array([[1, 0, 0, 0],
-                  [0, 0, 1, 0]])
+    # Original system dynamics (commented out)
+    # A = np.array([[1, dt, 0, 0],
+    #               [0, 1, 0, 0],
+    #               [0, 0, 1, dt],
+    #               [0, 0, 0, 1]])
+    # B = np.zeros((4, 2))  # No control input
+    # C = np.array([[1, 0, 0, 0],
+    #               [0, 0, 1, 0]])
+    
+    # New random system with unstable A and detectable (A,C)
+    nx = 4
+    ny = 2
+    
+    # Generate random unstable A matrix
+    np.random.seed(42)  # For reproducibility
+    while True:
+        A = np.random.randn(nx, nx) * 0.5
+        eigenvals = np.linalg.eigvals(A)
+        if np.max(np.real(eigenvals)) > 1.0:  # Check if unstable
+            break
+    
+    # Generate random C matrix ensuring detectability
+    C = np.random.randn(ny, nx) * 0.5
+    
+    # Check detectability condition
+    while not is_detectable(A, C):
+        C = np.random.randn(ny, nx) * 0.5
+    
+    B = np.zeros((nx, 2))  # No control input
     
     system_data = (A, C)
     
@@ -151,7 +171,7 @@ def run_experiment(exp_idx, dist, num_sim, seed_base, robust_val, T_total):
         raise ValueError("Unsupported noise distribution.")
     
     # --- Generate Data for EM ---
-    N_data = 5
+    N_data = 10
     _, y_all_em = generate_data(N_data, nx, ny, A, C,
                                 mu_w, Sigma_w, mu_v, Sigma_v,
                                 x0_mean, x0_cov, x0_max, x0_min,
@@ -374,101 +394,58 @@ def run_experiment(exp_idx, dist, num_sim, seed_base, robust_val, T_total):
         res = estimator.forward()
         return res
 
-    results_finite = [run_simulation_finite(i) for i in range(num_sim)]
-    mse_mean_finite = np.mean([np.mean(r['mse']) for r in results_finite])
-    rep_state_finite = results_finite[0]['state_traj']
-
-    results_inf = [run_simulation_inf_kf(i) for i in range(num_sim)]
-    mse_mean_inf = np.mean([np.mean(r['mse']) for r in results_inf])
-    rep_state_inf = results_inf[0]['state_traj']
-
-    results_drkf = [run_simulation_inf_drkf(i) for i in range(num_sim)]
-    mse_mean_drkf = np.mean([np.mean(r['mse']) for r in results_drkf])
-    rep_state_drkf = results_drkf[0]['state_traj']
-
-    results_bcot = [run_simulation_bcot(i) for i in range(num_sim)]
-    mse_mean_bcot = np.mean([np.mean(r['mse']) for r in results_bcot])
-    rep_state_bcot = results_bcot[0]['state_traj']
-
-    results_drkf_finite = [run_simulation_finite_drkf(i) for i in range(num_sim)]
-    mse_mean_drkf_finite = np.mean([np.mean(r['mse']) for r in results_drkf_finite])
-    rep_state_drkf_finite = results_drkf_finite[0]['state_traj']
-
-    results_drkf_inf_cdc = [run_simulation_inf_drkf_cdc(i) for i in range(num_sim)]
-    mse_mean_drkf_inf_cdc = np.mean([np.mean(r['mse']) for r in results_drkf_inf_cdc])
-    rep_state_drkf_inf_cdc = results_drkf_inf_cdc[0]['state_traj']
-
-    results_drkf_finite_cdc = [run_simulation_finite_drkf_cdc(i) for i in range(num_sim)]
-    mse_mean_drkf_finite_cdc = np.mean([np.mean(r['mse']) for r in results_drkf_finite_cdc])
-    rep_state_drkf_finite_cdc = results_drkf_finite_cdc[0]['state_traj']
-
-    results_risk = [run_simulation_risk(i) for i in range(num_sim)]
-    mse_mean_risk = np.mean([np.mean(r['mse']) for r in results_risk])
-    rep_state_risk = results_risk[0]['state_traj']
-
-    results_drkf_neurips = [run_simulation_drkf_neurips(i) for i in range(num_sim)]
-    mse_mean_drkf_neurips = np.mean([np.mean(r['mse']) for r in results_drkf_neurips])
-    rep_state_drkf_neurips = results_drkf_neurips[0]['state_traj']
-
-    # MMSE baseline (best possible estimator with true parameters)
+    
+    # Filter execution mapping
+    filter_functions = {
+        'finite': run_simulation_finite,
+        'inf': run_simulation_inf_kf,
+        'drkf_inf': run_simulation_inf_drkf,
+        'bcot': run_simulation_bcot,
+        'drkf_finite': run_simulation_finite_drkf,
+        'drkf_inf_cdc': run_simulation_inf_drkf_cdc,
+        'drkf_finite_cdc': run_simulation_finite_drkf_cdc,
+        'risk': run_simulation_risk,
+        'drkf_neurips': run_simulation_drkf_neurips
+    }
+    
+    # Execute only selected filters
+    filter_results = {}
+    for filter_name in filters_to_execute:
+        if filter_name in filter_functions:
+            results = [filter_functions[filter_name](i) for i in range(num_sim)]
+            filter_results[filter_name] = {
+                'results': results,
+                'mse_mean': np.mean([np.mean(r['mse']) for r in results]),
+                'rep_state': results[0]['state_traj']
+            }
+    
+    # MMSE baseline (always executed)
     results_mmse_baseline = [run_simulation_mmse_baseline(i) for i in range(num_sim)]
     mse_mean_mmse_baseline = np.mean([np.mean(r['mse']) for r in results_mmse_baseline])
     rep_state_mmse_baseline = results_mmse_baseline[0]['state_traj']
     
-    # Calculate regret (difference from MMSE baseline) for each filter
-    regret_finite = mse_mean_finite - mse_mean_mmse_baseline
-    regret_inf = mse_mean_inf - mse_mean_mmse_baseline
-    regret_drkf = mse_mean_drkf - mse_mean_mmse_baseline
-    regret_drkf_finite = mse_mean_drkf_finite - mse_mean_mmse_baseline
-    regret_drkf_inf_cdc = mse_mean_drkf_inf_cdc - mse_mean_mmse_baseline
-    regret_drkf_finite_cdc = mse_mean_drkf_finite_cdc - mse_mean_mmse_baseline
-    regret_risk = mse_mean_risk - mse_mean_mmse_baseline
-    regret_drkf_neurips = mse_mean_drkf_neurips - mse_mean_mmse_baseline
-    regret_bcot = mse_mean_bcot - mse_mean_mmse_baseline
-
+    # Calculate regret (difference from MMSE baseline) for each executed filter
     overall_results = {
-        'finite': mse_mean_finite,
-        'finite_state': rep_state_finite,
-        'finite_regret': regret_finite,
-        'inf': mse_mean_inf,
-        'inf_state': rep_state_inf,
-        'inf_regret': regret_inf,
-        'drkf_inf': mse_mean_drkf,
-        'drkf_inf_state': rep_state_drkf,
-        'drkf_inf_regret': regret_drkf,
-        'drkf_finite': mse_mean_drkf_finite,
-        'drkf_finite_state': rep_state_drkf_finite,
-        'drkf_finite_regret': regret_drkf_finite,
-        'drkf_inf_cdc': mse_mean_drkf_inf_cdc,
-        'drkf_inf_cdc_state': rep_state_drkf_inf_cdc,
-        'drkf_inf_cdc_regret': regret_drkf_inf_cdc,
-        'drkf_finite_cdc': mse_mean_drkf_finite_cdc,
-        'drkf_finite_cdc_state': rep_state_drkf_finite_cdc,
-        'drkf_finite_cdc_regret': regret_drkf_finite_cdc,
-        'risk': mse_mean_risk,
-        'risk_state': rep_state_risk,
-        'risk_regret': regret_risk,
-        'drkf_neurips': mse_mean_drkf_neurips,
-        'drkf_neurips_state': rep_state_drkf_neurips,
-        'drkf_neurips_regret': regret_drkf_neurips,
-        'bcot': mse_mean_bcot,
-        'bcot_state': rep_state_bcot,
-        'bcot_regret': regret_bcot,
         'mmse_baseline': mse_mean_mmse_baseline,
         'mmse_baseline_state': rep_state_mmse_baseline,
     }
-    return overall_results, {
-        'finite': results_finite,
-        'inf': results_inf,
-        'drkf_inf': results_drkf,
-        'drkf_finite': results_drkf_finite,
-        'drkf_inf_cdc': results_drkf_inf_cdc,
-        'drkf_finite_cdc': results_drkf_finite_cdc,
-        'risk': results_risk,
-        'drkf_neurips': results_drkf_neurips,
-        'bcot': results_bcot,
-        'mmse_baseline': results_mmse_baseline,
-    }
+    
+    for filter_name in filters_to_execute:
+        if filter_name in filter_results:
+            mse_mean = filter_results[filter_name]['mse_mean']
+            rep_state = filter_results[filter_name]['rep_state']
+            regret = mse_mean - mse_mean_mmse_baseline
+            
+            overall_results[filter_name] = mse_mean
+            overall_results[f'{filter_name}_state'] = rep_state
+            overall_results[f'{filter_name}_regret'] = regret
+    # Return raw results for executed filters
+    raw_results = {'mmse_baseline': results_mmse_baseline}
+    for filter_name in filters_to_execute:
+        if filter_name in filter_results:
+            raw_results[filter_name] = filter_results[filter_name]['results']
+    
+    return overall_results, raw_results
 
 # --- Main Routine ---
 def main(dist, num_sim, num_exp, T_total):
@@ -480,10 +457,10 @@ def main(dist, num_sim, num_exp, T_total):
     elif dist=='laplace':
         robust_vals = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1.0, 2.0, 5.0, 10.0]
     
-    # Define filters (the same keys are used for MSE and state trajectories)
-    # Order: Time-varying KF, Time-invariant KF, Risk-Sensitive Filter, DRKF (NeurIPS), BCOT, 
-    # DRKF (ours, finite, CDC), DRKF (ours, inf CDC), DRKF (ours, finite), DRKF (ours, infinite)
-    filters = ['finite', 'inf', 'risk', 'drkf_neurips', 'bcot', 'drkf_finite_cdc', 'drkf_inf_cdc', 'drkf_finite', 'drkf_inf']
+    # Configurable filter execution list - modify this to enable/disable filters
+    # Available filters: 'finite', 'inf', 'risk', 'drkf_neurips', 'bcot', 'drkf_finite_cdc', 'drkf_inf_cdc', 'drkf_finite', 'drkf_inf'
+    filters_to_execute = ['finite', 'inf', 'drkf_neurips', 'drkf_finite_cdc', 'drkf_inf_cdc', 'drkf_finite', 'drkf_inf']
+    filters = filters_to_execute
     filter_labels = {
         'finite': "Time-varying KF",
         'inf': "Time-invariant KF",
@@ -501,32 +478,33 @@ def main(dist, num_sim, num_exp, T_total):
     for robust_val in robust_vals:
         print(f"Running experiments for robust parameter = {robust_val}")
         experiments = Parallel(n_jobs=-1)(
-            delayed(run_experiment)(exp_idx, dist, num_sim, seed_base, robust_val, T_total)
+            delayed(run_experiment)(exp_idx, dist, num_sim, seed_base, robust_val, T_total, filters_to_execute)
             for exp_idx in range(num_exp)
         )
         # Unpack overall results from the tuple returned by run_experiment.
         overall_experiments = [exp[0] for exp in experiments]
-        all_mse = {key: [] for key in filters}
-        all_regret = {key: [] for key in filters}
+        all_mse = {key: [] for key in filters_to_execute}
+        all_regret = {key: [] for key in filters_to_execute}
         mmse_baseline_values = []
         
         for exp in overall_experiments:
             # Collect MSE values for each filter
-            for key in filters:
-                all_mse[key].append(np.mean(exp[key]))
-                all_regret[key].append(exp[f'{key}_regret'])
+            for key in filters_to_execute:
+                if key in exp:  # Only process if filter was executed
+                    all_mse[key].append(np.mean(exp[key]))
+                    all_regret[key].append(exp[f'{key}_regret'])
             # Collect MMSE baseline values
             mmse_baseline_values.append(exp['mmse_baseline'])
             
-        final_mse = {key: np.mean(all_mse[key]) for key in filters}
-        final_mse_std = {key: np.std(all_mse[key]) for key in filters}
-        final_regret = {key: np.mean(all_regret[key]) for key in filters}
-        final_regret_std = {key: np.std(all_regret[key]) for key in filters}
+        final_mse = {key: np.mean(all_mse[key]) for key in filters_to_execute if all_mse[key]}
+        final_mse_std = {key: np.std(all_mse[key]) for key in filters_to_execute if all_mse[key]}
+        final_regret = {key: np.mean(all_regret[key]) for key in filters_to_execute if all_regret[key]}
+        final_regret_std = {key: np.std(all_regret[key]) for key in filters_to_execute if all_regret[key]}
         mmse_baseline_mean = np.mean(mmse_baseline_values)
         mmse_baseline_std = np.std(mmse_baseline_values)
         
         # Store representative state trajectories from the first experiment run for this robust value
-        rep_state = {filt: overall_experiments[0][f"{filt}_state"] for filt in filters}
+        rep_state = {filt: overall_experiments[0][f"{filt}_state"] for filt in filters_to_execute if f"{filt}_state" in overall_experiments[0]}
         all_results[robust_val] = {
             'mse': final_mse,
             'mse_std': final_mse_std,
@@ -543,7 +521,7 @@ def main(dist, num_sim, num_exp, T_total):
     optimal_results = {}
     optimal_regret_results = {}
     
-    for f in filters:
+    for f in filters_to_execute:
         if f in ['finite', 'inf']:
             candidate = list(all_results.values())[0]
             optimal_results[f] = {
@@ -618,8 +596,9 @@ def main(dist, num_sim, num_exp, T_total):
     header = "{:<50} {:<35} {:<35} {:<15}".format("Method", "Average MSE", "Average Regret", "Best theta")
     print(header)
     print("-"*135)
-    for filt in filters:
-        best_theta = optimal_results[filt]['robust_val']
+    for filt in filters_to_execute:
+        if filt in optimal_results:
+            best_theta = optimal_results[filt]['robust_val']
         mse = optimal_results[filt]['mse']
         mse_std = optimal_results[filt]['mse_std']
         regret = optimal_results[filt]['regret']
@@ -632,8 +611,9 @@ def main(dist, num_sim, num_exp, T_total):
     header = "{:<50} {:<35} {:<35} {:<15}".format("Method", "Average MSE", "Average Regret", "Best theta")
     print(header)
     print("-"*135)
-    for filt in filters:
-        best_theta_regret = optimal_regret_results[filt]['robust_val']
+    for filt in filters_to_execute:
+        if filt in optimal_regret_results:
+            best_theta_regret = optimal_regret_results[filt]['robust_val']
         mse = optimal_regret_results[filt]['mse']
         mse_std = optimal_regret_results[filt]['mse_std']
         regret = optimal_regret_results[filt]['regret']
