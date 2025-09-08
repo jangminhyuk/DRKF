@@ -86,29 +86,33 @@ def generate_data(T, nx, ny, A, C, mu_w, Sigma_w, mu_v, Sigma_v,
 
 # --- Modified Experiment Function ---
 def run_experiment(exp_idx, dist, num_sim, seed_base, theta_w, theta_v, T_total):
-    np.random.seed(seed_base + exp_idx)
+    # Use proper seed spacing to avoid correlation between experiments
+    experiment_seed = seed_base + exp_idx * 12345
+    np.random.seed(experiment_seed)
     
     # Set time horizon to T=50
     T = 50  # simulation horizon
     
-    # New random system with unstable A and detectable (A,C)
+    
     nx = 4
     ny = 2
     
-    # Generate random unstable A matrix
-    np.random.seed(42)  # For reproducibility
-    while True:
-        A = np.random.randn(nx, nx) * 0.5
-        eigenvals = np.linalg.eigvals(A)
-        if np.max(np.real(eigenvals)) > 1.0:  # Check if unstable
-            break
+    # System matrix A (4x4)
+    A = np.array([
+        [1.0,   0.2,  0.0,   0.0],
+        [0.0,   0.2, 0.2,  0.0],
+        [0.0,   0.0,  0.2,  0.2],
+        [0.0,   0.0,  0.0,  -1.0]
+    ])
     
-    # Generate random C matrix ensuring detectability
-    C = np.random.randn(ny, nx) * 0.5
+    #print("A e.v.: ", np.linalg.eigvals(A))
     
-    # Check detectability condition
-    while not is_detectable(A, C):
-        C = np.random.randn(ny, nx) * 0.5
+    
+    # Output matrix C (2x4)
+    C = np.array([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0]
+    ])
     
     B = np.zeros((nx, 2))  # No control input
     
@@ -164,6 +168,9 @@ def run_experiment(exp_idx, dist, num_sim, seed_base, theta_w, theta_v, T_total)
     y_all_em = y_all_em.squeeze()
     
     # --- EM Estimation of Nominal Covariances ---
+    # Ensure EM algorithm is reproducible within this experiment
+    np.random.seed(experiment_seed + 1000)  # Different seed offset for EM
+    
     mu_w_hat = np.zeros((nx, 1))
     mu_v_hat = np.zeros((ny, 1))
     mu_x0_hat = x0_mean.copy()
@@ -215,6 +222,33 @@ def run_experiment(exp_idx, dist, num_sim, seed_base, theta_w, theta_v, T_total)
         print("Warning: nominal_Sigma_v (noise covariance) is not positive definite!")
         exit()
     
+    
+    # --- Generate Shared Noise Sequences for Fair Comparison ---
+    # Generate noise sequences once per experiment, reuse across all filters
+    shared_noise_sequences = []
+    for sim_idx in range(num_sim):
+        np.random.seed(experiment_seed + 2000 + sim_idx)
+        
+        # Generate noise for this simulation
+        if dist == "normal":
+            x0_noise = normal(x0_mean, x0_cov)
+            w_noise = [normal(mu_w, Sigma_w) for _ in range(T+1)]
+            v_noise = [normal(mu_v, Sigma_v) for _ in range(T+1)]
+        elif dist == "quadratic":
+            x0_noise = quadratic(x0_max, x0_min)
+            w_noise = [quadratic(w_max, w_min) for _ in range(T+1)]
+            v_noise = [quadratic(v_max, v_min) for _ in range(T+1)]
+        elif dist == "laplace":
+            x0_noise = laplace(x0_mean, x0_scale)
+            w_noise = [laplace(mu_w, w_scale) for _ in range(T+1)]
+            v_noise = [laplace(mu_v, v_scale) for _ in range(T+1)]
+            
+        shared_noise_sequences.append({
+            'x0': x0_noise,
+            'w': w_noise,
+            'v': v_noise
+        })
+    
     # --- Simulation Functions for Standard KF and DRKF ---
     def run_simulation_standard_kf(sim_idx_local):
         estimator = KF(
@@ -222,11 +256,15 @@ def run_experiment(exp_idx, dist, num_sim, seed_base, theta_w, theta_v, T_total)
             true_x0_mean=x0_mean, true_x0_cov=x0_cov,
             true_mu_w=mu_w, true_Sigma_w=Sigma_w,
             true_mu_v=mu_v, true_Sigma_v=Sigma_v,
+            # Use TRUE parameters as nominal for MMSE baseline (perfect model knowledge)
             nominal_x0_mean=x0_mean, nominal_x0_cov=x0_cov,
             nominal_mu_w=mu_w, nominal_Sigma_w=Sigma_w,
             nominal_mu_v=mu_v, nominal_Sigma_v=Sigma_v,
             x0_max=x0_max, x0_min=x0_min, w_max=w_max, w_min=w_min, v_max=v_max, v_min=v_min,
             x0_scale=x0_scale, w_scale=w_scale, v_scale=v_scale)
+        # Use shared noise sequences for fair comparison
+        estimator.shared_noise_sequences = shared_noise_sequences[sim_idx_local]
+        estimator._noise_index = 0
         estimator.K_lqr = np.zeros((nu, nx))
         res = estimator.forward()
         return res
@@ -243,6 +281,9 @@ def run_experiment(exp_idx, dist, num_sim, seed_base, theta_w, theta_v, T_total)
             x0_max=x0_max, x0_min=x0_min, w_max=w_max, w_min=w_min, v_max=v_max, v_min=v_min,
             x0_scale=x0_scale, w_scale=w_scale, v_scale=v_scale,
             theta_w=theta_w, theta_v=theta_v)
+        # Use shared noise sequences for fair comparison
+        estimator.shared_noise_sequences = shared_noise_sequences[sim_idx_local]
+        estimator._noise_index = 0
         estimator.K_lqr = np.zeros((nu, nx))
         res = estimator.forward()
         return res
@@ -271,8 +312,8 @@ def main(dist, num_sim, num_exp, T_total):
     seed_base = 2024
     
     # Define theta_w and theta_v ranges for 3D plotting - denser grid for smoother plots
-    theta_w_vals = [0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0]
-    theta_v_vals = [0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0]
+    theta_w_vals = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 7.0, 10.0]
+    theta_v_vals = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 7.0, 10.0]
     
     # Storage for 3D plotting data
     regret_data = []
@@ -327,7 +368,7 @@ if __name__ == "__main__":
                         help="Uncertainty distribution (normal, quadratic, or laplace)")
     parser.add_argument('--num_sim', default=1, type=int,
                         help="Number of simulation runs per experiment")
-    parser.add_argument('--num_exp', default=50, type=int,
+    parser.add_argument('--num_exp', default=100, type=int,
                         help="Number of independent experiments")
     parser.add_argument('--time', default=5, type=int,
                         help="Total simulation time")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-risk_sensitive.py
+risk_seek.py
 
 This module implements a risk–sensitive filter for state estimation
 in a closed-loop LQR control experiment.
@@ -10,7 +10,7 @@ in a closed-loop LQR control experiment.
 import numpy as np
 from LQR_with_estimator.base_filter import BaseFilter
 
-class RiskSensitive(BaseFilter):
+class RiskSeek(BaseFilter):
     def __init__(self, T, dist, noise_dist, system_data, B,
                  true_x0_mean, true_x0_cov,
                  true_mu_w, true_Sigma_w,
@@ -41,7 +41,7 @@ class RiskSensitive(BaseFilter):
                         x0_scale, w_scale, v_scale)
         
         self.D = 1.0*np.eye(self.nx)
-        self.theta_rs = theta_rs
+        self.theta_rs = -abs(theta_rs)
         self.theta_too_large = False  # Flag to track if theta is too large
 
     def _initial_update(self, x_est_init, y0):

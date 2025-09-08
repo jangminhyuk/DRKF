@@ -87,6 +87,10 @@ class BCOT:
         
         # LQR gain will be assigned externally.
         self.K_lqr = None
+        
+        # Support for shared noise sequences (for fair comparison with other filters)
+        self.shared_noise_sequences = None
+        self._noise_index = 0
 
     # --- Sampling Functions for True Noise ---
     def normal(self, mu, Sigma, N=1):
@@ -119,6 +123,9 @@ class BCOT:
 
 
     def sample_initial_state(self):
+        if self.shared_noise_sequences is not None:
+            return self.shared_noise_sequences['x0']
+        
         if self.dist == "normal":
             return self.normal(self.true_x0_mean, self.true_x0_cov, N=1)
         elif self.dist == "quadratic":
@@ -129,6 +136,10 @@ class BCOT:
             raise ValueError("Unsupported distribution for initial state.")
 
     def sample_process_noise(self):
+        if self.shared_noise_sequences is not None:
+            w = self.shared_noise_sequences['w'][self._noise_index]
+            return w
+        
         if self.dist == "normal":
             return self.normal(self.true_mu_w, self.true_Sigma_w, N=1)
         elif self.dist == "quadratic":
@@ -139,6 +150,10 @@ class BCOT:
             raise ValueError("Unsupported distribution for process noise.")
 
     def sample_measurement_noise(self):
+        if self.shared_noise_sequences is not None:
+            v = self.shared_noise_sequences['v'][self._noise_index]
+            return v
+        
         if self.noise_dist == "normal":
             return self.normal(self.true_mu_v, self.true_Sigma_v, N=1)
         elif self.noise_dist == "quadratic":
@@ -157,6 +172,9 @@ class BCOT:
         A = self.A
         C = self.C
         B = self.B
+        
+        # Reset noise index for consistent sequences across experiments
+        self._noise_index = 0
         
         # Allocate arrays for true state, measurements, and state estimates.
         x = np.zeros((T+1, nx, 1))
@@ -192,6 +210,9 @@ class BCOT:
             # True state propagation: x[t+1] = A*x[t] + B*u + w
             w = self.sample_process_noise()
             x[t+1] = A @ x[t] + B @ u + w
+            
+            # Increment noise index after sampling process noise
+            self._noise_index += 1
             
             # Measurement:
             v = self.sample_measurement_noise()
@@ -230,6 +251,9 @@ class BCOT:
         A = self.A
         C = self.C
         B = self.B
+
+        # Reset noise index for consistent sequences across experiments
+        self._noise_index = 0
 
         # Allocate arrays.
         x = np.zeros((T+1, nx, 1))         # true state trajectory
@@ -272,6 +296,9 @@ class BCOT:
             # True state propagation.
             w = self.sample_process_noise()
             x[t+1] = A @ x[t] + B @ u + w
+
+            # Increment noise index after sampling process noise
+            self._noise_index += 1
 
             # Measurement.
             v = self.sample_measurement_noise()

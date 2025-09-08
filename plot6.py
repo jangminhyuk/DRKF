@@ -88,19 +88,20 @@ def create_3d_surface_plot(regret_data, dist):
     vmax = np.nanmax(regret_grid_fine)
     
     surf = ax.plot_surface(log_theta_w_grid_fine, log_theta_v_grid_fine, regret_grid_fine,
-                          cmap='plasma', alpha=0.9, linewidth=0, antialiased=True,
+                          cmap='plasma', alpha=0.9, linewidth=1.0, antialiased=True,
                           norm=PowerNorm(gamma=0.35, vmin=vmin, vmax=vmax))
     
     # Data points removed for cleaner surface
     
     # Contour lines at bottom removed for cleaner appearance
     
-    # Set custom tick labels - show only a few values to avoid overlap
-    tick_indices = [0, len(theta_w_unique)//4, len(theta_w_unique)//2, 3*len(theta_w_unique)//4, -1]
-    ax.set_xticks([log_theta_w[i] for i in tick_indices])
-    ax.set_xticklabels([f'{theta_w_unique[i]:.2f}' for i in tick_indices])
-    ax.set_yticks([log_theta_v[i] for i in tick_indices])
-    ax.set_yticklabels([f'{theta_v_unique[i]:.2f}' for i in tick_indices])
+    # Set custom tick labels with specific nice values
+    nice_ticks = [0.01, 0.1, 1.0, 10.0]
+    nice_log_ticks = [np.log10(t) for t in nice_ticks]
+    ax.set_xticks(nice_log_ticks)
+    ax.set_xticklabels(['0.01', '0.1', '1.0', '10.0'])
+    ax.set_yticks(nice_log_ticks)
+    ax.set_yticklabels(['0.01', '0.1', '1.0', '10.0'])
     
     # Set labels with LaTeX formatting and big font
     ax.set_xlabel(r'$\theta_w$', fontsize=20)

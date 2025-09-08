@@ -39,6 +39,8 @@ def get_color_for_filter(filt, i):
         return 'blue'
     elif filt == 'risk':
         return 'magenta'
+    elif filt == 'risk_seek':
+        return 'darkviolet'
     elif filt == 'bcot':
         return 'red'
     elif filt == 'drkf_finite':
@@ -237,8 +239,8 @@ def create_theta_effect_plot(all_results, dist, filters, filter_labels):
     
     # Use global color function for consistent coloring
     
-    # Define letter labels (A) to (I)
-    letter_labels = ['(A)', '(B)', '(C)', '(D)', '(E)', '(F)', '(G)', '(H)', '(I)']
+    # Define letter labels (A) to (L) - expanded to accommodate more filters
+    letter_labels = ['(A)', '(B)', '(C)', '(D)', '(E)', '(F)', '(G)', '(H)', '(I)', '(J)', '(K)', '(L)']
     
     # Plot each filter
     for i, filt in enumerate(filters):
@@ -334,8 +336,8 @@ def create_regret_theta_effect_plot(all_results, dist, filters, filter_labels):
     
     # Use global color function for consistent coloring
     
-    # Define letter labels (A) to (I)
-    letter_labels = ['(A)', '(B)', '(C)', '(D)', '(E)', '(F)', '(G)', '(H)', '(I)']
+    # Define letter labels (A) to (L) - expanded to accommodate more filters
+    letter_labels = ['(A)', '(B)', '(C)', '(D)', '(E)', '(F)', '(G)', '(H)', '(I)', '(J)', '(K)', '(L)']
     
     # Plot each filter
     for i, filt in enumerate(filters):
@@ -533,13 +535,14 @@ def main(dist):
         return
     
     # Get filters from the loaded results to match main5.py execution list
-    available_filters = ['finite', 'inf', 'risk', 'drkf_neurips', 'bcot', 'drkf_finite_cdc', 'drkf_inf_cdc', 'drkf_finite', 'drkf_inf']
+    available_filters = ['finite', 'inf', 'risk', 'risk_seek', 'drkf_neurips', 'bcot', 'drkf_finite_cdc', 'drkf_inf_cdc', 'drkf_finite', 'drkf_inf']
     # Only use filters that have results in the data
     filters = [f for f in available_filters if f in optimal_results]
     filter_labels = {
         'finite': "Time-varying KF",
         'inf': "Steady-State KF",
-        'risk': "Risk-Sensitive Filter",
+        'risk': "Risk-Sensitive Filter (risk-averse)",
+        'risk_seek': "Risk-Sensitive Filter (risk-seeking)", 
         'drkf_neurips': "Time-varying DRKF (NeurIPS2018)",
         'bcot': "Time-varying DRKF (TAC2024)",
         'drkf_finite_cdc': "Time-varying DRKF (CDC2025)",

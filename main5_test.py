@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-main5.py
+main5_1.py
 
 This experiment runs a state estimation comparison without controller.
 The system is:
@@ -11,9 +11,9 @@ Multiple filters (KF, DRKF variants) are compared for state estimation accuracy
 without any control input (B matrix and control are ignored).
 
 Usage example:
-    python main5.py --dist normal
-    python main5.py --dist quadratic  
-    python main5.py --dist laplace
+    python main5_1.py --dist normal
+    python main5_1.py --dist quadratic  
+    python main5_1.py --dist laplace
 """
 
 import numpy as np
@@ -33,6 +33,7 @@ from LQR_with_estimator.DRKF_ours_inf_CDC import DRKF_ours_inf_CDC
 from LQR_with_estimator.DRKF_ours_finite_CDC import DRKF_ours_finite_CDC
 from LQR_with_estimator.BCOT import BCOT 
 from LQR_with_estimator.risk_sensitive import RiskSensitive
+from LQR_with_estimator.risk_seek import RiskSeek
 from LQR_with_estimator.DRKF_neurips import DRKF_neurips
 from common_utils import (save_data, is_stabilizable, is_detectable, is_positive_definite,
                          enforce_positive_definiteness)
@@ -451,6 +452,29 @@ def run_experiment(exp_idx, dist, num_sim, seed_base, robust_val, T_total, filte
         res = estimator.forward()
         return res
 
+    def run_simulation_risk_seek(sim_idx_local):
+        estimator = RiskSeek(
+            T=T, dist=dist, noise_dist=dist, system_data=system_data, B=B,
+            true_x0_mean=x0_mean, true_x0_cov=x0_cov,
+            true_mu_w=mu_w, true_Sigma_w=Sigma_w,
+            true_mu_v=mu_v, true_Sigma_v=Sigma_v,
+            nominal_x0_mean=x0_mean,  # known initial state mean
+            nominal_x0_cov=nominal_x0_cov,
+            nominal_mu_w=mu_w,        # known process noise mean
+            nominal_Sigma_w=nominal_Sigma_w,
+            nominal_mu_v=mu_v,        # known measurement noise mean
+            nominal_Sigma_v=nominal_Sigma_v,
+            theta_rs=robust_val,
+            x0_max=x0_max, x0_min=x0_min, w_max=w_max, w_min=w_min, v_max=v_max, v_min=v_min,
+            x0_scale=x0_scale, w_scale=w_scale, v_scale=v_scale,
+)
+        # Use shared noise sequences for fair comparison
+        estimator.shared_noise_sequences = shared_noise_sequences[sim_idx_local]
+        estimator._noise_index = 0
+        estimator.K_lqr = np.zeros((nu, nx))  # Dummy LQR gain (no control)
+        res = estimator.forward()
+        return res
+
     def run_simulation_mmse_baseline(sim_idx_local):
         # MMSE baseline using true distribution parameters (best possible estimator)
         estimator = KF(
@@ -483,6 +507,7 @@ def run_experiment(exp_idx, dist, num_sim, seed_base, robust_val, T_total, filte
         'drkf_inf_cdc': run_simulation_inf_drkf_cdc,
         'drkf_finite_cdc': run_simulation_finite_drkf_cdc,
         'risk': run_simulation_risk,
+        'risk_seek': run_simulation_risk_seek,
         'drkf_neurips': run_simulation_drkf_neurips
     }
     
@@ -556,13 +581,14 @@ def main(dist, num_sim, num_exp, T_total):
         robust_vals = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1.0, 2.0, 5.0, 10.0]
     
     # Configurable filter execution list - modify this to enable/disable filters
-    # Available filters: 'finite', 'inf', 'risk', 'drkf_neurips', 'bcot', 'drkf_finite_cdc', 'drkf_inf_cdc', 'drkf_finite', 'drkf_inf'
-    filters_to_execute = ['finite', 'inf', 'risk', 'drkf_inf']
+    # Available filters: 'finite', 'inf', 'risk', 'risk_seek', 'drkf_neurips', 'bcot', 'drkf_finite_cdc', 'drkf_inf_cdc', 'drkf_finite', 'drkf_inf'
+    filters_to_execute = ['finite', 'inf', 'risk', 'risk_seek', 'drkf_neurips', 'bcot', 'drkf_finite_cdc', 'drkf_inf_cdc', 'drkf_finite', 'drkf_inf']
     filters = filters_to_execute
     filter_labels = {
         'finite': "Time-varying KF",
         'inf': "Time-invariant KF",
         'risk': "Risk-Sensitive Filter",
+        'risk_seek': "Risk-Seeking Filter",
         'drkf_neurips': "DRKF (NeurIPS)",
         'bcot': "DRKF (BCOT)",
         'drkf_finite_cdc': "DRKF (ours, finite, CDC)",
@@ -579,12 +605,18 @@ def main(dist, num_sim, num_exp, T_total):
         # Check if any filters should be skipped for this theta value
         current_filters = filters_to_execute.copy()
         
-        # Skip filters that failed for smaller theta values (only for risk-sensitive filter)
+        # Skip filters that failed for smaller theta values (only for risk-sensitive filters)
         if 'risk' in failed_theta_filters:
             min_failed_theta = min(failed_theta_filters['risk'])
             if robust_val >= min_failed_theta:
                 print(f"Skipping risk-sensitive filter for θ={robust_val} (failed at θ={min_failed_theta})")
                 current_filters = [f for f in current_filters if f != 'risk']
+        
+        if 'risk_seek' in failed_theta_filters:
+            min_failed_theta = min(failed_theta_filters['risk_seek'])
+            if robust_val >= min_failed_theta:
+                print(f"Skipping risk-seeking filter for θ={robust_val} (failed at θ={min_failed_theta})")
+                current_filters = [f for f in current_filters if f != 'risk_seek']
         
         if not current_filters:
             print(f"No filters to run for robust parameter = {robust_val}, skipping...")

@@ -22,7 +22,7 @@ class KF(BaseFilter):
                         nominal_x0_mean, nominal_x0_cov, nominal_mu_w, nominal_Sigma_w, nominal_mu_v, nominal_Sigma_v,
                         x0_max, x0_min, w_max, w_min, v_max, v_min,
                         x0_scale, w_scale, v_scale)
-        # KF uses true_Sigma_v as nominal measurement noise covariance
+        
         self.nominal_Sigma_v = nominal_Sigma_v
 
 
@@ -31,12 +31,14 @@ class KF(BaseFilter):
         S0 = self.C @ P0 @ self.C.T + self.nominal_Sigma_v
         K0 = P0 @ self.C.T @ np.linalg.inv(S0)
         innovation0 = y0 - (self.C @ x_est_init + self.nominal_mu_v)
+        self._P = np.zeros((self.T+1, self.nx, self.nx))
+        self._P[0] = (np.eye(self.nx) - K0 @ self.C) @ P0
         return x_est_init + K0 @ innovation0
     
     def _kalman_update(self, x_pred, y, t):
-        if not hasattr(self, '_P'):
-            self._P = np.zeros((self.T+1, self.nx, self.nx))
-            self._P[0] = self.nominal_x0_cov.copy()
+        # if not hasattr(self, '_P'):
+        #     self._P = np.zeros((self.T+1, self.nx, self.nx))
+            
         
         P_pred = self.A @ self._P[t-1] @ self.A.T + self.nominal_Sigma_w
         S_t = self.C @ P_pred @ self.C.T + self.nominal_Sigma_v
