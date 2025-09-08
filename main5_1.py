@@ -94,23 +94,13 @@ def generate_data(T, nx, ny, A, C, mu_w, Sigma_w, mu_v, M,
 
 
 # --- Modified Experiment Function ---
-def run_experiment(exp_idx, dist, num_sim, seed_base, robust_val, T_total, filters_to_execute):
+def run_experiment(exp_idx, dist, num_sim, seed_base, robust_val, filters_to_execute):
     # Use proper seed spacing to avoid correlation between experiments
     experiment_seed = seed_base + exp_idx * 12345
     np.random.seed(experiment_seed)
     
     # Set time horizon to T=50
-    T = 50  # simulation horizon
-    
-    # Original system dynamics (commented out)
-    # A = np.array([[1, dt, 0, 0],
-    #               [0, 1, 0, 0],
-    #               [0, 0, 1, dt],
-    #               [0, 0, 0, 1]])
-    # B = np.zeros((4, 2))  # No control input
-    # C = np.array([[1, 0, 0, 0],
-    #               [0, 0, 1, 0]])
-    
+    T = 50
     nx = 4
     ny = 2
     
@@ -568,7 +558,7 @@ def run_experiment(exp_idx, dist, num_sim, seed_base, robust_val, T_total, filte
     return overall_results, raw_results
 
 # --- Main Routine ---
-def main(dist, num_sim, num_exp, T_total):
+def main(dist, num_sim, num_exp ):
     seed_base = 2024
     
     # Ensure global reproducibility
@@ -625,7 +615,7 @@ def main(dist, num_sim, num_exp, T_total):
         print(f"Running experiments for robust parameter = {robust_val}")
         # Use deterministic parallel execution - each experiment has its own unique seed
         experiments = Parallel(n_jobs=-1, backend='loky')(
-            delayed(run_experiment)(exp_idx, dist, num_sim, seed_base, robust_val, T_total, current_filters)
+            delayed(run_experiment)(exp_idx, dist, num_sim, seed_base, robust_val, current_filters)
             for exp_idx in range(num_exp)
         )
         # Unpack overall results from the tuple returned by run_experiment.
@@ -808,7 +798,5 @@ if __name__ == "__main__":
                         help="Number of simulation runs per experiment")
     parser.add_argument('--num_exp', default=20, type=int,
                         help="Number of independent experiments")
-    parser.add_argument('--time', default=5, type=int,
-                        help="Total simulation time")
     args = parser.parse_args()
-    main(args.dist, args.num_sim, args.num_exp, args.time)
+    main(args.dist, args.num_sim, args.num_exp)

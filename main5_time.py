@@ -4,7 +4,7 @@
 main5_time.py
 
 Computation time comparison experiment for 6 DRKF methods.
-Tests execution time across varying time horizons T from 2 to 100.
+Tests execution time across varying time horizons
 """
 
 import numpy as np
